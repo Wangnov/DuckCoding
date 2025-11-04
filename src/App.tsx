@@ -75,17 +75,15 @@ function SortableProfileItem({ profile, toolId, switching, deleting, onSwitch, o
       style={style}
       className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
     >
-      <div className="flex items-center gap-2 flex-1">
+      <div className="flex items-center gap-2 flex-1" {...attributes} {...listeners}>
         <div
-          {...attributes}
-          {...listeners}
           className="cursor-grab active:cursor-grabbing p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
         >
           <GripVertical className="h-4 w-4 text-slate-400" />
         </div>
         <span className="font-medium text-slate-900 dark:text-slate-100">{profile}</span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         <Button
           size="sm"
           variant="outline"
@@ -110,6 +108,7 @@ function SortableProfileItem({ profile, toolId, switching, deleting, onSwitch, o
           )}
         </Button>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();

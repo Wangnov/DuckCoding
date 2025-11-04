@@ -564,7 +564,7 @@ async fn update_tool(tool: String) -> Result<UpdateResult, String> {
     println!("Updating {} (pure Rust implementation)", tool);
 
     // 根据工具类型获取更新命令
-    let (update_command, update_args) = match tool.as_str() {
+    let (update_command, update_args, description) = match tool.as_str() {
         "claude-code" => {
             // Claude Code 检测安装方式
             // 首先检查是否通过 npm 安装
@@ -578,17 +578,17 @@ async fn update_tool(tool: String) -> Result<UpdateResult, String> {
                 // 如果 npm list 输出包含包名，说明是 npm 安装的
                 if output.status.success() && stdout_str.contains("@anthropic-ai/claude-code") {
                     println!("Claude Code detected as npm installation, using npm update");
-                    ("npm", vec!["update", "-g", "@anthropic-ai/claude-code"])
+                    ("npm", vec!["update", "-g", "@anthropic-ai/claude-code"], "npm更新")
                 } else {
                     // 使用官方安装脚本更新
                     println!("Claude Code detected as native installation, using official script");
                     #[cfg(target_os = "windows")]
                     {
-                        ("powershell", vec!["-Command", "irm https://claude.ai/install.ps1 | iex"])
+                        ("powershell", vec!["-Command", "irm https://claude.ai/install.ps1 | iex"], "官方脚本更新")
                     }
                     #[cfg(not(target_os = "windows"))]
                     {
-                        ("sh", vec!["-c", "curl -fsSL https://claude.ai/install.sh | bash"])
+                        ("sh", vec!["-c", "curl -fsSL https://claude.ai/install.sh | bash"], "官方脚本更新")
                     }
                 }
             } else {
@@ -596,11 +596,11 @@ async fn update_tool(tool: String) -> Result<UpdateResult, String> {
                 println!("npm check failed, defaulting to official script");
                 #[cfg(target_os = "windows")]
                 {
-                    ("powershell", vec!["-Command", "irm https://claude.ai/install.ps1 | iex"])
+                    ("powershell", vec!["-Command", "irm https://claude.ai/install.ps1 | iex"], "官方脚本更新")
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
-                    ("sh", vec!["-c", "curl -fsSL https://claude.ai/install.sh | bash"])
+                    ("sh", vec!["-c", "curl -fsSL https://claude.ai/install.sh | bash"], "官方脚本更新")
                 }
             }
         },
@@ -618,38 +618,55 @@ async fn update_tool(tool: String) -> Result<UpdateResult, String> {
                     let path = String::from_utf8_lossy(&output.stdout);
                     if path.contains("/opt/homebrew/") || path.contains("/usr/local/") {
                         // brew 安装的，使用 brew 更新
-                        ("brew", vec!["upgrade", "codex"])
+                        ("brew", vec!["upgrade", "codex"], "Homebrew更新")
                     } else {
                         // npm 安装的
-                        ("npm", vec!["update", "-g", "@openai/codex"])
+                        ("npm", vec!["update", "-g", "@openai/codex"], "npm更新")
                     }
                 } else {
                     // 默认用 npm
-                    ("npm", vec!["update", "-g", "@openai/codex"])
+                    ("npm", vec!["update", "-g", "@openai/codex"], "npm更新")
                 }
             }
             #[cfg(not(target_os = "macos"))]
             {
                 // Windows 和 Linux 统一用 npm
-                ("npm", vec!["update", "-g", "@openai/codex"])
+                ("npm", vec!["update", "-g", "@openai/codex"], "npm更新")
             }
         },
         "gemini-cli" => {
             // Gemini CLI 使用 npm 更新（跨平台）
-            ("npm", vec!["update", "-g", "@google/gemini-cli"])
+            ("npm", vec!["update", "-g", "@google/gemini-cli"], "npm更新")
         },
         _ => {
             return Err(format!("Unknown tool: {}", tool));
         }
     };
 
-    // 执行更新
-    println!("Executing update: {} {:?}", update_command, update_args);
-    let output = Command::new(update_command)
-        .env("PATH", get_extended_path())
-        .args(&update_args)
-        .output()
-        .map_err(|e| format!("Failed to execute update: {}", e))?;
+    println!("使用{}方式更新: {} {:?}", description, update_command, update_args);
+
+    // 执行更新，使用tokio::time::timeout添加超时（60秒）
+    use tokio::time::{timeout, Duration};
+
+    let update_task = tokio::task::spawn_blocking(move || {
+        Command::new(update_command)
+            .env("PATH", get_extended_path())
+            .args(&update_args)
+            .output()
+    });
+
+    let output = match timeout(Duration::from_secs(60), update_task).await {
+        Ok(Ok(Ok(output))) => output,
+        Ok(Ok(Err(e))) => {
+            return Err(format!("更新失败: {}", e));
+        },
+        Ok(Err(e)) => {
+            return Err(format!("更新任务错误: {}", e));
+        },
+        Err(_) => {
+            return Err(format!("更新超时（60秒）。\n\n如果使用官方脚本更新需要访问外网，请确保网络畅通或使用npm方式安装：\n1. 先卸载: npm uninstall -g @anthropic-ai/claude-code\n2. 重新用npm安装: npm install -g @anthropic-ai/claude-code"));
+        }
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
