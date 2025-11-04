@@ -169,6 +169,14 @@ function App() {
   const [userQuota, setUserQuota] = useState<UserQuotaResult | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
+  // Node环境检测状态
+  const [nodeEnv, setNodeEnv] = useState<NodeEnvironment | null>(null);
+  const [installMethods, setInstallMethods] = useState<Record<string, string>>({
+    "claude-code": "official",
+    "codex": "official",
+    "gemini-cli": "npm",
+  });
+
   const logoMap: Record<string, string> = {
     "claude-code": ClaudeLogo,
     "codex": CodexLogo,
@@ -301,8 +309,40 @@ function App() {
     }
   };
 
+  // 获取工具可用的安装方式
+  const getAvailableInstallMethods = (toolId: string): Array<{value: string, label: string, disabled?: boolean}> => {
+    const isMac = navigator.userAgent.includes('Mac');
+
+    if (toolId === "claude-code") {
+      return [
+        { value: "official", label: "官方脚本 (推荐)" },
+        { value: "npm", label: "npm 安装", disabled: !nodeEnv?.npm_available }
+      ];
+    } else if (toolId === "codex") {
+      const methods = [
+        { value: "official", label: "官方安装 (推荐)" },
+        { value: "npm", label: "npm 安装", disabled: !nodeEnv?.npm_available }
+      ];
+      if (isMac) {
+        methods.splice(1, 0, { value: "brew", label: "Homebrew" });
+      }
+      return methods;
+    } else if (toolId === "gemini-cli") {
+      return [
+        { value: "npm", label: "npm 安装 (推荐)", disabled: !nodeEnv?.npm_available }
+      ];
+    }
+    return [];
+  };
+
   useEffect(() => {
     loadToolStatus();
+    checkNodeEnvironment().then(env => {
+      setNodeEnv(env);
+      console.log("Node environment:", env);
+    }).catch(error => {
+      console.error("Failed to check node environment:", error);
+    });
   }, []);
 
   // Cleanup timeout on unmount
@@ -597,7 +637,8 @@ function App() {
   const handleInstall = async (toolId: string) => {
     try {
       setInstalling(toolId);
-      const method = toolId === "claude-code" ? "official" : toolId === "codex" ? "brew" : "npm";
+      const method = installMethods[toolId] || "official";
+      console.log(`Installing ${toolId} using method: ${method}`);
       await installTool(toolId, method);
       await loadToolStatus();
     } catch (error) {
@@ -1030,7 +1071,7 @@ function App() {
                         className="shadow-sm border"
                       >
                         <CardContent className="p-5">
-                          <div className="flex items-center justify-between gap-6">
+                          <div className="flex items-start justify-between gap-6">
                             <div className="flex items-center gap-4 flex-1">
                               <div className="bg-secondary p-3 rounded-lg flex-shrink-0">
                                 <img src={logoMap[tool.id]} alt={tool.name} className="w-12 h-12" />
@@ -1055,20 +1096,46 @@ function App() {
                                 )}
                               </div>
                             </div>
-                            <Button
-                              disabled={tool.installed || installing === tool.id}
-                              onClick={() => handleInstall(tool.id)}
-                              className="shadow-md hover:shadow-lg transition-all bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 disabled:from-slate-400 disabled:to-slate-400 h-11 px-6 font-medium flex-shrink-0"
-                              size="lg"
-                            >
-                              {installing === tool.id ? (
-                                <><Loader2 className="mr-2 h-5 w-5 animate-spin" />安装中...</>
-                              ) : tool.installed ? (
-                                <><CheckCircle2 className="mr-2 h-5 w-5" />已安装</>
-                              ) : (
-                                <><Package className="mr-2 h-5 w-5" />安装工具</>
+                            <div className="flex flex-col gap-3 items-end">
+                              {!tool.installed && (
+                                <div className="w-48">
+                                  <Label htmlFor={`method-${tool.id}`} className="text-xs mb-1.5 block">安装方式</Label>
+                                  <Select
+                                    value={installMethods[tool.id]}
+                                    onValueChange={(value) => setInstallMethods({ ...installMethods, [tool.id]: value })}
+                                  >
+                                    <SelectTrigger id={`method-${tool.id}`} className="shadow-sm h-9 text-sm">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {getAvailableInstallMethods(tool.id).map(method => (
+                                        <SelectItem
+                                          key={method.value}
+                                          value={method.value}
+                                          disabled={method.disabled}
+                                        >
+                                          {method.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               )}
-                            </Button>
+                              <Button
+                                disabled={tool.installed || installing === tool.id}
+                                onClick={() => handleInstall(tool.id)}
+                                className="shadow-md hover:shadow-lg transition-all bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 disabled:from-slate-400 disabled:to-slate-400 h-11 px-6 font-medium w-48"
+                                size="lg"
+                              >
+                                {installing === tool.id ? (
+                                  <><Loader2 className="mr-2 h-5 w-5 animate-spin" />安装中...</>
+                                ) : tool.installed ? (
+                                  <><CheckCircle2 className="mr-2 h-5 w-5" />已安装</>
+                                ) : (
+                                  <><Package className="mr-2 h-5 w-5" />安装工具</>
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
