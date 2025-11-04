@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, XCircle, Package, Settings as SettingsIcon, RefreshCw, LayoutDashboard, Loader2, AlertCircle, Save, ExternalLink, Info, ArrowRightLeft, Key, Sparkles, Trash2, GripVertical } from "lucide-react";
-import { checkInstallations, installTool, checkUpdate, updateTool, configureApi, listProfiles, switchProfile, deleteProfile, getActiveConfig, saveGlobalConfig, getGlobalConfig, generateApiKeyForTool, getUsageStats, getUserQuota, type ToolStatus, type UpdateResult, type ActiveConfig, type GlobalConfig, type UsageStatsResult, type UserQuotaResult } from "@/lib/tauri-commands";
+import { checkInstallations, checkNodeEnvironment, installTool, checkUpdate, updateTool, configureApi, listProfiles, switchProfile, deleteProfile, getActiveConfig, saveGlobalConfig, getGlobalConfig, generateApiKeyForTool, getUsageStats, getUserQuota, type ToolStatus, type NodeEnvironment, type UpdateResult, type ActiveConfig, type GlobalConfig, type UsageStatsResult, type UserQuotaResult } from "@/lib/tauri-commands";
 import {
   DndContext,
   closestCenter,
@@ -337,10 +337,10 @@ function App() {
 
   useEffect(() => {
     loadToolStatus();
-    checkNodeEnvironment().then(env => {
+    checkNodeEnvironment().then((env: NodeEnvironment) => {
       setNodeEnv(env);
       console.log("Node environment:", env);
-    }).catch(error => {
+    }).catch((error: unknown) => {
       console.error("Failed to check node environment:", error);
     });
   }, []);
