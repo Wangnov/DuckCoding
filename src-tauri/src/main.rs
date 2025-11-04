@@ -186,6 +186,68 @@ async fn check_installations() -> Result<Vec<ToolStatus>, String> {
     Ok(tools)
 }
 
+// 检测node环境
+#[tauri::command]
+async fn check_node_environment() -> Result<NodeEnvironment, String> {
+    println!("Checking node environment...");
+
+    let run_command = |cmd: &str| -> Result<std::process::Output, std::io::Error> {
+        #[cfg(target_os = "windows")]
+        {
+            Command::new("cmd")
+                .env("PATH", get_extended_path())
+                .arg("/C")
+                .arg(cmd)
+                .output()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Command::new("sh")
+                .env("PATH", get_extended_path())
+                .arg("-c")
+                .arg(cmd)
+                .output()
+        }
+    };
+
+    // 检测node
+    let (node_available, node_version) = if let Ok(output) = run_command("node --version 2>&1") {
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            println!("Node detected: {}", version);
+            (true, Some(version))
+        } else {
+            println!("Node not found");
+            (false, None)
+        }
+    } else {
+        println!("Failed to check node");
+        (false, None)
+    };
+
+    // 检测npm
+    let (npm_available, npm_version) = if let Ok(output) = run_command("npm --version 2>&1") {
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            println!("npm detected: {}", version);
+            (true, Some(version))
+        } else {
+            println!("npm not found");
+            (false, None)
+        }
+    } else {
+        println!("Failed to check npm");
+        (false, None)
+    };
+
+    Ok(NodeEnvironment {
+        node_available,
+        node_version,
+        npm_available,
+        npm_version,
+    })
+}
+
 #[tauri::command]
 async fn install_tool(tool: String, method: String) -> Result<InstallResult, String> {
     println!("Installing {} via {} (pure Rust implementation)", tool, method);
@@ -1251,6 +1313,14 @@ struct ToolStatus {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+struct NodeEnvironment {
+    node_available: bool,
+    node_version: Option<String>,
+    npm_available: bool,
+    npm_version: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct InstallResult {
     success: bool,
     message: String,
@@ -2066,6 +2136,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             check_installations,
+            check_node_environment,
             install_tool,
             check_update,
             update_tool,

@@ -64,8 +64,19 @@ export interface UserQuotaResult {
   request_count: number;
 }
 
+export interface NodeEnvironment {
+  node_available: boolean;
+  node_version: string | null;
+  npm_available: boolean;
+  npm_version: string | null;
+}
+
 export async function checkInstallations(): Promise<ToolStatus[]> {
   return await invoke<ToolStatus[]>("check_installations");
+}
+
+export async function checkNodeEnvironment(): Promise<NodeEnvironment> {
+  return await invoke<NodeEnvironment>("check_node_environment");
 }
 
 export async function installTool(tool: string, method: string): Promise<InstallResult> {
