@@ -19,41 +19,68 @@ struct CliDir(Mutex<PathBuf>);
 
 // 辅助函数：获取扩展的PATH环境变量
 fn get_extended_path() -> String {
-    let home_dir = env::var("HOME").unwrap_or_else(|_| "/Users/wufeifan".to_string());
+    #[cfg(target_os = "windows")]
+    {
+        let user_profile = env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".to_string());
 
-    let mut system_paths = vec![
-        // Claude Code 可能的安装路径
-        format!("{}/.local/bin", home_dir),
-        format!("{}/.claude/bin", home_dir),
-        format!("{}/.claude/local", home_dir),  // Claude Code local安装
+        let mut system_paths = vec![
+            // Claude Code 可能的安装路径
+            format!("{}\\AppData\\Local\\Programs\\claude-code", user_profile),
+            format!("{}\\AppData\\Roaming\\npm", user_profile),
+            format!("{}\\AppData\\Local\\Programs\\Python\\Python312", user_profile),
+            format!("{}\\AppData\\Local\\Programs\\Python\\Python312\\Scripts", user_profile),
 
-        // Homebrew
-        "/opt/homebrew/bin".to_string(),
-        "/usr/local/bin".to_string(),
+            // 常见安装路径
+            "C:\\Program Files\\nodejs".to_string(),
+            "C:\\Program Files\\Git\\cmd".to_string(),
 
-        // 系统路径
-        "/usr/bin".to_string(),
-        "/bin".to_string(),
-        "/usr/sbin".to_string(),
-        "/sbin".to_string(),
-    ];
+            // 系统路径
+            "C:\\Windows\\System32".to_string(),
+            "C:\\Windows".to_string(),
+        ];
 
-    // 添加nvm路径（如果存在）
-    let nvm_dir = format!("{}/.nvm/versions/node", home_dir);
-    if let Ok(entries) = fs::read_dir(&nvm_dir) {
-        for entry in entries.flatten() {
-            if let Ok(file_type) = entry.file_type() {
-                if file_type.is_dir() {
-                    let bin_path = entry.path().join("bin");
-                    if bin_path.exists() {
-                        system_paths.push(bin_path.to_string_lossy().to_string());
+        let current_path = env::var("PATH").unwrap_or_default();
+        format!("{};{}", system_paths.join(";"), current_path)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home_dir = env::var("HOME").unwrap_or_else(|_| "/Users/default".to_string());
+
+        let mut system_paths = vec![
+            // Claude Code 可能的安装路径
+            format!("{}/.local/bin", home_dir),
+            format!("{}/.claude/bin", home_dir),
+            format!("{}/.claude/local", home_dir),  // Claude Code local安装
+
+            // Homebrew
+            "/opt/homebrew/bin".to_string(),
+            "/usr/local/bin".to_string(),
+
+            // 系统路径
+            "/usr/bin".to_string(),
+            "/bin".to_string(),
+            "/usr/sbin".to_string(),
+            "/sbin".to_string(),
+        ];
+
+        // 添加nvm路径（如果存在）
+        let nvm_dir = format!("{}/.nvm/versions/node", home_dir);
+        if let Ok(entries) = fs::read_dir(&nvm_dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_dir() {
+                        let bin_path = entry.path().join("bin");
+                        if bin_path.exists() {
+                            system_paths.push(bin_path.to_string_lossy().to_string());
+                        }
                     }
                 }
             }
         }
-    }
 
-    format!("{}:{}", system_paths.join(":"), env::var("PATH").unwrap_or_default())
+        format!("{}:{}", system_paths.join(":"), env::var("PATH").unwrap_or_default())
+    }
 }
 
 // 辅助函数：获取CLI工作目录
@@ -131,30 +158,58 @@ async fn check_installations() -> Result<Vec<ToolStatus>, String> {
 
     // 检测 Claude Code
     if let Ok(output) = run_command("claude --version 2>&1") {
-        if output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        println!("Claude Code detection - status: {}, stdout: {}, stderr: {}", output.status.success(), stdout_str.trim(), stderr_str.trim());
+
+        if output.status.success() || !stdout_str.is_empty() || !stderr_str.is_empty() {
             if let Some(tool) = tools.iter_mut().find(|t| t.id == "claude-code") {
                 tool.installed = true;
-                tool.version = Some(String::from_utf8_lossy(&output.stdout).trim().to_string());
+                // 尝试从stdout或stderr获取版本
+                let version_output = if !stdout_str.trim().is_empty() {
+                    stdout_str.trim().to_string()
+                } else {
+                    stderr_str.trim().to_string()
+                };
+                tool.version = Some(version_output);
             }
         }
     }
 
     // 检测 CodeX
     if let Ok(output) = run_command("codex --version 2>&1") {
-        if output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        println!("CodeX detection - status: {}, stdout: {}, stderr: {}", output.status.success(), stdout_str.trim(), stderr_str.trim());
+
+        if output.status.success() || !stdout_str.is_empty() || !stderr_str.is_empty() {
             if let Some(tool) = tools.iter_mut().find(|t| t.id == "codex") {
                 tool.installed = true;
-                tool.version = Some(String::from_utf8_lossy(&output.stdout).trim().to_string());
+                let version_output = if !stdout_str.trim().is_empty() {
+                    stdout_str.trim().to_string()
+                } else {
+                    stderr_str.trim().to_string()
+                };
+                tool.version = Some(version_output);
             }
         }
     }
 
     // 检测 Gemini CLI
     if let Ok(output) = run_command("gemini --version 2>&1") {
-        if output.status.success() {
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        println!("Gemini CLI detection - status: {}, stdout: {}, stderr: {}", output.status.success(), stdout_str.trim(), stderr_str.trim());
+
+        if output.status.success() || !stdout_str.is_empty() || !stderr_str.is_empty() {
             if let Some(tool) = tools.iter_mut().find(|t| t.id == "gemini-cli") {
                 tool.installed = true;
-                tool.version = Some(String::from_utf8_lossy(&output.stdout).trim().to_string());
+                let version_output = if !stdout_str.trim().is_empty() {
+                    stdout_str.trim().to_string()
+                } else {
+                    stderr_str.trim().to_string()
+                };
+                tool.version = Some(version_output);
             }
         }
     }
@@ -199,8 +254,9 @@ async fn install_tool(tool: String, method: String, cli_dir: State<'_, CliDir>) 
 
 // 只检查更新，不执行
 #[tauri::command]
-async fn check_update(tool: String) -> Result<UpdateResult, String> {
-    println!("Checking updates for {}", tool);
+async fn check_update(tool: String, cli_dir: State<'_, CliDir>) -> Result<UpdateResult, String> {
+    let cli_path = cli_dir.0.lock().unwrap().clone();
+    println!("Checking updates for {} in {:?}", tool, cli_path);
 
     // 根据工具类型获取 npm 包名
     let package_name = match tool.as_str() {
@@ -215,6 +271,7 @@ async fn check_update(tool: String) -> Result<UpdateResult, String> {
     // 获取当前安装的版本
     let check_output = Command::new("node")
         .env("PATH", get_extended_path())
+        .current_dir(&cli_path)
         .arg("cli.js")
         .arg("check")
         .output();
@@ -265,7 +322,8 @@ async fn check_update(tool: String) -> Result<UpdateResult, String> {
 
 #[tauri::command]
 async fn update_tool(tool: String, cli_dir: State<'_, CliDir>) -> Result<UpdateResult, String> {
-    println!("Updating {}", tool);
+    let cli_path = cli_dir.0.lock().unwrap().clone();
+    println!("Updating {} using cli at {:?}", tool, cli_path);
 
     // 根据工具类型获取更新命令
     let (update_command, update_args) = match tool.as_str() {
@@ -330,6 +388,7 @@ async fn update_tool(tool: String, cli_dir: State<'_, CliDir>) -> Result<UpdateR
         // 获取更新后的版本
         let check_output = Command::new("node")
             .env("PATH", get_extended_path())
+            .current_dir(&cli_path)
             .arg("cli.js")
             .arg("check")
             .output();
@@ -836,6 +895,62 @@ async fn switch_profile(tool: String, profile: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn delete_profile(tool: String, profile: String) -> Result<(), String> {
+    let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
+
+    match tool.as_str() {
+        "claude-code" => {
+            let config_dir = home_dir.join(".claude");
+            let backup_path = config_dir.join(format!("settings.{}.json", profile));
+
+            if !backup_path.exists() {
+                return Err(format!("配置文件不存在: {}", profile));
+            }
+
+            fs::remove_file(&backup_path)
+                .map_err(|e| format!("删除配置失败: {}", e))?;
+        },
+        "codex" => {
+            let config_dir = home_dir.join(".codex");
+            let backup_config_path = config_dir.join(format!("config.{}.toml", profile));
+            let backup_auth_path = config_dir.join(format!("auth.{}.json", profile));
+
+            if !backup_config_path.exists() {
+                return Err(format!("配置文件不存在: {}", profile));
+            }
+
+            fs::remove_file(&backup_config_path)
+                .map_err(|e| format!("删除配置失败: {}", e))?;
+
+            if backup_auth_path.exists() {
+                fs::remove_file(&backup_auth_path)
+                    .map_err(|e| format!("删除认证文件失败: {}", e))?;
+            }
+        },
+        "gemini-cli" => {
+            let config_dir = home_dir.join(".gemini");
+            let backup_env_path = config_dir.join(format!(".env.{}", profile));
+            let backup_settings_path = config_dir.join(format!("settings.{}.json", profile));
+
+            if !backup_env_path.exists() {
+                return Err(format!("配置文件不存在: {}", profile));
+            }
+
+            fs::remove_file(&backup_env_path)
+                .map_err(|e| format!("删除配置失败: {}", e))?;
+
+            if backup_settings_path.exists() {
+                fs::remove_file(&backup_settings_path)
+                    .map_err(|e| format!("删除设置文件失败: {}", e))?;
+            }
+        },
+        _ => return Err(format!("Unknown tool: {}", tool))
+    }
+
+    Ok(())
+}
+
 // 数据结构定义
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct ToolStatus {
@@ -865,6 +980,7 @@ struct UpdateResult {
 struct ActiveConfig {
     api_key: String,
     base_url: String,
+    profile_name: Option<String>,  // 当前配置的名称
 }
 
 // 全局配置结构
@@ -1245,6 +1361,150 @@ async fn get_user_quota() -> Result<UserQuotaResult, String> {
     })
 }
 
+// 辅助函数：检测当前配置匹配哪个profile
+fn detect_profile_name(tool: &str, active_api_key: &str, active_base_url: &str, home_dir: &std::path::Path) -> Option<String> {
+    let config_dir = match tool {
+        "claude-code" => home_dir.join(".claude"),
+        "codex" => home_dir.join(".codex"),
+        "gemini-cli" => home_dir.join(".gemini"),
+        _ => return None,
+    };
+
+    if !config_dir.exists() {
+        return None;
+    }
+
+    // 遍历配置目录，查找匹配的备份文件
+    if let Ok(entries) = fs::read_dir(&config_dir) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+
+            // 根据工具类型匹配不同的备份文件格式
+            let profile_name = match tool {
+                "claude-code" => {
+                    // 匹配 settings.{profile}.json
+                    if file_name_str.starts_with("settings.") && file_name_str.ends_with(".json") && file_name_str != "settings.json" {
+                        file_name_str.strip_prefix("settings.").and_then(|s| s.strip_suffix(".json"))
+                    } else {
+                        None
+                    }
+                },
+                "codex" => {
+                    // 匹配 config.{profile}.toml
+                    if file_name_str.starts_with("config.") && file_name_str.ends_with(".toml") && file_name_str != "config.toml" {
+                        file_name_str.strip_prefix("config.").and_then(|s| s.strip_suffix(".toml"))
+                    } else {
+                        None
+                    }
+                },
+                "gemini-cli" => {
+                    // 匹配 .env.{profile}
+                    if file_name_str.starts_with(".env.") && file_name_str != ".env" {
+                        file_name_str.strip_prefix(".env.")
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
+            };
+
+            if let Some(profile) = profile_name {
+                // 读取备份文件并比较内容
+                let is_match = match tool {
+                    "claude-code" => {
+                        if let Ok(content) = fs::read_to_string(entry.path()) {
+                            if let Ok(config) = serde_json::from_str::<Value>(&content) {
+                                let backup_api_key = config.get("env")
+                                    .and_then(|env| env.get("ANTHROPIC_AUTH_TOKEN"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let backup_base_url = config.get("env")
+                                    .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+
+                                backup_api_key == active_api_key && backup_base_url == active_base_url
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    },
+                    "codex" => {
+                        // 需要同时检查 config.toml 和 auth.json
+                        let auth_backup = config_dir.join(format!("auth.{}.json", profile));
+                        if let Ok(auth_content) = fs::read_to_string(&auth_backup) {
+                            if let Ok(auth) = serde_json::from_str::<Value>(&auth_content) {
+                                let backup_api_key = auth.get("OPENAI_API_KEY")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+
+                                if backup_api_key != active_api_key {
+                                    return None;
+                                }
+                            }
+                        }
+
+                        // 检查 base_url
+                        if let Ok(config_content) = fs::read_to_string(entry.path()) {
+                            if let Ok(config) = toml::from_str::<toml::Value>(&config_content) {
+                                if let toml::Value::Table(table) = config {
+                                    if let Some(toml::Value::Table(providers)) = table.get("model_providers") {
+                                        for (_, provider) in providers {
+                                            if let toml::Value::Table(p) = provider {
+                                                if let Some(toml::Value::String(url)) = p.get("base_url") {
+                                                    if url == active_base_url {
+                                                        return Some(profile.to_string());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        false
+                    },
+                    "gemini-cli" => {
+                        if let Ok(content) = fs::read_to_string(entry.path()) {
+                            let mut backup_api_key = "";
+                            let mut backup_base_url = "";
+
+                            for line in content.lines() {
+                                let line = line.trim();
+                                if line.is_empty() || line.starts_with('#') {
+                                    continue;
+                                }
+
+                                if let Some((key, value)) = line.split_once('=') {
+                                    match key.trim() {
+                                        "GEMINI_API_KEY" => backup_api_key = value.trim(),
+                                        "GOOGLE_GEMINI_BASE_URL" => backup_base_url = value.trim(),
+                                        _ => {}
+                                    }
+                                }
+                            }
+
+                            backup_api_key == active_api_key && backup_base_url == active_base_url
+                        } else {
+                            false
+                        }
+                    },
+                    _ => false,
+                };
+
+                if is_match {
+                    return Some(profile.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
 #[tauri::command]
 async fn get_active_config(tool: String) -> Result<ActiveConfig, String> {
     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
@@ -1256,6 +1516,7 @@ async fn get_active_config(tool: String) -> Result<ActiveConfig, String> {
                 return Ok(ActiveConfig {
                     api_key: "未配置".to_string(),
                     base_url: "未配置".to_string(),
+                    profile_name: None,
                 });
             }
 
@@ -1264,26 +1525,40 @@ async fn get_active_config(tool: String) -> Result<ActiveConfig, String> {
             let config: Value = serde_json::from_str(&content)
                 .map_err(|e| format!("Failed to parse config: {}", e))?;
 
-            let api_key = config.get("env")
+            let raw_api_key = config.get("env")
                 .and_then(|env| env.get("ANTHROPIC_AUTH_TOKEN"))
                 .and_then(|v| v.as_str())
-                .map(|s| mask_api_key(s))
-                .unwrap_or_else(|| "未配置".to_string());
+                .unwrap_or("");
+
+            let api_key = if raw_api_key.is_empty() {
+                "未配置".to_string()
+            } else {
+                mask_api_key(raw_api_key)
+            };
 
             let base_url = config.get("env")
                 .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("未配置");
 
+            // 检测配置名称
+            let profile_name = if !raw_api_key.is_empty() && base_url != "未配置" {
+                detect_profile_name("claude-code", raw_api_key, base_url, &home_dir)
+            } else {
+                None
+            };
+
             Ok(ActiveConfig {
                 api_key,
                 base_url: base_url.to_string(),
+                profile_name,
             })
         },
         "codex" => {
             let auth_path = home_dir.join(".codex").join("auth.json");
             let config_path = home_dir.join(".codex").join("config.toml");
 
+            let mut raw_api_key = String::new();
             let mut api_key = "未配置".to_string();
             let mut base_url = "未配置".to_string();
 
@@ -1295,6 +1570,7 @@ async fn get_active_config(tool: String) -> Result<ActiveConfig, String> {
                     .map_err(|e| format!("Failed to parse auth: {}", e))?;
 
                 if let Some(key) = auth.get("OPENAI_API_KEY").and_then(|v| v.as_str()) {
+                    raw_api_key = key.to_string();
                     api_key = mask_api_key(key);
                 }
             }
@@ -1321,7 +1597,14 @@ async fn get_active_config(tool: String) -> Result<ActiveConfig, String> {
                 }
             }
 
-            Ok(ActiveConfig { api_key, base_url })
+            // 检测配置名称
+            let profile_name = if !raw_api_key.is_empty() && base_url != "未配置" {
+                detect_profile_name("codex", &raw_api_key, &base_url, &home_dir)
+            } else {
+                None
+            };
+
+            Ok(ActiveConfig { api_key, base_url, profile_name })
         },
         "gemini-cli" => {
             let env_path = home_dir.join(".gemini").join(".env");
@@ -1329,12 +1612,14 @@ async fn get_active_config(tool: String) -> Result<ActiveConfig, String> {
                 return Ok(ActiveConfig {
                     api_key: "未配置".to_string(),
                     base_url: "未配置".to_string(),
+                    profile_name: None,
                 });
             }
 
             let content = fs::read_to_string(&env_path)
                 .map_err(|e| format!("Failed to read .env: {}", e))?;
 
+            let mut raw_api_key = String::new();
             let mut api_key = "未配置".to_string();
             let mut base_url = "未配置".to_string();
 
@@ -1346,14 +1631,24 @@ async fn get_active_config(tool: String) -> Result<ActiveConfig, String> {
 
                 if let Some((key, value)) = line.split_once('=') {
                     match key.trim() {
-                        "GEMINI_API_KEY" => api_key = mask_api_key(value.trim()),
+                        "GEMINI_API_KEY" => {
+                            raw_api_key = value.trim().to_string();
+                            api_key = mask_api_key(value.trim());
+                        },
                         "GOOGLE_GEMINI_BASE_URL" => base_url = value.trim().to_string(),
                         _ => {}
                     }
                 }
             }
 
-            Ok(ActiveConfig { api_key, base_url })
+            // 检测配置名称
+            let profile_name = if !raw_api_key.is_empty() && base_url != "未配置" {
+                detect_profile_name("gemini-cli", &raw_api_key, &base_url, &home_dir)
+            } else {
+                None
+            };
+
+            Ok(ActiveConfig { api_key, base_url, profile_name })
         },
         _ => Err(format!("Unknown tool: {}", tool))
     }
@@ -1477,6 +1772,7 @@ fn main() {
             configure_api,
             list_profiles,
             switch_profile,
+            delete_profile,
             get_active_config,
             save_global_config,
             get_global_config,

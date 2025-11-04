@@ -24,6 +24,7 @@ export interface UpdateResult {
 export interface ActiveConfig {
   api_key: string;
   base_url: string;
+  profile_name?: string;
 }
 
 export interface GlobalConfig {
@@ -101,6 +102,10 @@ export async function listProfiles(tool: string): Promise<string[]> {
 
 export async function switchProfile(tool: string, profile: string): Promise<void> {
   return await invoke<void>("switch_profile", { tool, profile });
+}
+
+export async function deleteProfile(tool: string, profile: string): Promise<void> {
+  return await invoke<void>("delete_profile", { tool, profile });
 }
 
 export async function getActiveConfig(tool: string): Promise<ActiveConfig> {

@@ -7,8 +7,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CheckCircle2, XCircle, Package, Settings as SettingsIcon, RefreshCw, LayoutDashboard, Loader2, AlertCircle, Save, ExternalLink, Info, ArrowRightLeft, Key, Sparkles } from "lucide-react";
-import { checkInstallations, installTool, checkUpdate, updateTool, configureApi, listProfiles, switchProfile, getActiveConfig, saveGlobalConfig, getGlobalConfig, generateApiKeyForTool, getUsageStats, getUserQuota, type ToolStatus, type UpdateResult, type ActiveConfig, type GlobalConfig, type UsageStatsResult, type UserQuotaResult } from "@/lib/tauri-commands";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CheckCircle2, XCircle, Package, Settings as SettingsIcon, RefreshCw, LayoutDashboard, Loader2, AlertCircle, Save, ExternalLink, Info, ArrowRightLeft, Key, Sparkles, Trash2, GripVertical } from "lucide-react";
+import { checkInstallations, installTool, checkUpdate, updateTool, configureApi, listProfiles, switchProfile, deleteProfile, getActiveConfig, saveGlobalConfig, getGlobalConfig, generateApiKeyForTool, getUsageStats, getUserQuota, type ToolStatus, type UpdateResult, type ActiveConfig, type GlobalConfig, type UsageStatsResult, type UserQuotaResult } from "@/lib/tauri-commands";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // Import logos
 import ClaudeLogo from "@/assets/claude-logo.png";
@@ -23,6 +41,82 @@ import { UsageChart } from "@/components/UsageChart";
 interface ToolWithUpdate extends ToolStatus {
   hasUpdate?: boolean;
   latestVersion?: string;
+}
+
+// 可排序的配置项组件
+interface SortableProfileItemProps {
+  profile: string;
+  toolId: string;
+  switching: boolean;
+  onSwitch: (toolId: string, profile: string) => void;
+  onDelete: (toolId: string, profile: string) => void;
+}
+
+function SortableProfileItem({ profile, toolId, switching, onSwitch, onDelete }: SortableProfileItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: profile });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
+    >
+      <div className="flex items-center gap-2 flex-1">
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+        >
+          <GripVertical className="h-4 w-4 text-slate-400" />
+        </div>
+        <span className="font-medium text-slate-900 dark:text-slate-100">{profile}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onSwitch(toolId, profile)}
+          disabled={switching}
+          className="shadow-sm hover:shadow-md transition-all"
+        >
+          {switching ? (
+            <>
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              切换中...
+            </>
+          ) : (
+            <>
+              <ArrowRightLeft className="h-3 w-3 mr-1" />
+              切换
+            </>
+          )}
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => onDelete(toolId, profile)}
+          disabled={switching}
+          className="shadow-sm hover:shadow-md transition-all"
+        >
+          <Trash2 className="h-3 w-3 mr-1" />
+          删除
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function App() {
@@ -51,6 +145,7 @@ function App() {
   const [profiles, setProfiles] = useState<Record<string, string[]>>({});
   const [selectedProfile, setSelectedProfile] = useState<Record<string, string>>({});
   const [activeConfigs, setActiveConfigs] = useState<Record<string, ActiveConfig>>({});
+  const [selectedSwitchTab, setSelectedSwitchTab] = useState<string>("");  // 切换配置页面的Tab选择
 
   // 全局配置状态
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -81,6 +176,77 @@ function App() {
     "claude-code": "Claude Code 专用分组",
     "codex": "CodeX 专用分组",
     "gemini-cli": "Gemini CLI 专用分组",
+  };
+
+  // 拖拽排序配置
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // LocalStorage 键名
+  const PROFILE_ORDER_KEY = "duckcoding_profile_order";
+
+  // 从 localStorage 加载排序
+  const loadProfileOrder = (toolId: string): string[] | null => {
+    try {
+      const stored = localStorage.getItem(`${PROFILE_ORDER_KEY}_${toolId}`);
+      return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+      console.error("Failed to load profile order:", error);
+      return null;
+    }
+  };
+
+  // 保存排序到 localStorage
+  const saveProfileOrder = (toolId: string, order: string[]) => {
+    try {
+      localStorage.setItem(`${PROFILE_ORDER_KEY}_${toolId}`, JSON.stringify(order));
+    } catch (error) {
+      console.error("Failed to save profile order:", error);
+    }
+  };
+
+  // 应用排序到配置列表
+  const applySavedOrder = (toolId: string, profileList: string[]): string[] => {
+    const savedOrder = loadProfileOrder(toolId);
+    if (!savedOrder) return profileList;
+
+    // 创建一个Set用于快速查找
+    const profileSet = new Set(profileList);
+
+    // 先添加保存的顺序中存在的项
+    const ordered = savedOrder.filter(profile => profileSet.has(profile));
+
+    // 添加新的项（不在保存的顺序中的）
+    const newProfiles = profileList.filter(profile => !savedOrder.includes(profile));
+
+    return [...ordered, ...newProfiles];
+  };
+
+  // 处理拖拽结束
+  const handleDragEnd = (toolId: string) => (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      setProfiles((prevProfiles) => {
+        const toolProfiles = prevProfiles[toolId] || [];
+        const oldIndex = toolProfiles.indexOf(active.id as string);
+        const newIndex = toolProfiles.indexOf(over.id as string);
+
+        const newOrder = arrayMove(toolProfiles, oldIndex, newIndex);
+
+        // 保存新顺序到 localStorage
+        saveProfileOrder(toolId, newOrder);
+
+        return {
+          ...prevProfiles,
+          [toolId]: newOrder,
+        };
+      });
+    }
   };
 
   // 清理版本号显示
@@ -177,7 +343,8 @@ function App() {
     for (const tool of installedTools) {
       try {
         const toolProfiles = await listProfiles(tool.id);
-        profileData[tool.id] = toolProfiles;
+        // 应用保存的排序
+        profileData[tool.id] = applySavedOrder(tool.id, toolProfiles);
       } catch (error) {
         console.error("Failed to load profiles for " + tool.id, error);
         profileData[tool.id] = [];
@@ -194,6 +361,11 @@ function App() {
 
     setProfiles(profileData);
     setActiveConfigs(configData);
+
+    // 设置默认选中的Tab（第一个已安装的工具）
+    if (installedTools.length > 0 && !selectedSwitchTab) {
+      setSelectedSwitchTab(installedTools[0].id);
+    }
   };
 
   // 加载全局配置
@@ -438,13 +610,17 @@ function App() {
   };
 
   const handleConfigureApi = async () => {
+    console.log("handleConfigureApi called", { selectedTool, provider, apiKey: apiKey ? "***" : "empty", baseUrl, profileName });
+
     if (!selectedTool || !apiKey) {
-      alert("请填写必填项");
+      console.error("Validation failed:", { selectedTool, hasApiKey: !!apiKey });
+      alert("请填写必填项：\n" + (!selectedTool ? "- 请选择工具\n" : "") + (!apiKey ? "- 请输入 API Key" : ""));
       return;
     }
 
     try {
       setConfiguring(true);
+      console.log("Calling configureApi...");
       await configureApi(
         selectedTool,
         provider,
@@ -452,6 +628,7 @@ function App() {
         provider === "custom" ? baseUrl : undefined,
         profileName || undefined
       );
+      console.log("Configuration successful");
       alert("配置成功！");
       setApiKey("");
       setBaseUrl("");
@@ -485,6 +662,41 @@ function App() {
       alert("切换失败: " + error);
     } finally {
       setSwitching(false);
+    }
+  };
+
+  const handleDeleteProfile = async (toolId: string, profile: string) => {
+    // 确认删除
+    const confirmed = window.confirm(`确定要删除配置「${profile}」吗？此操作不可恢复。`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteProfile(toolId, profile);
+
+      // 重新加载该工具的配置列表
+      try {
+        const updatedProfiles = await listProfiles(toolId);
+        // 应用保存的排序
+        const orderedProfiles = applySavedOrder(toolId, updatedProfiles);
+        setProfiles({ ...profiles, [toolId]: orderedProfiles });
+      } catch (error) {
+        console.error("Failed to reload profiles", error);
+      }
+
+      // 重新加载当前生效的配置
+      try {
+        const activeConfig = await getActiveConfig(toolId);
+        setActiveConfigs({ ...activeConfigs, [toolId]: activeConfig });
+      } catch (error) {
+        console.error("Failed to reload active config", error);
+      }
+
+      alert("配置删除成功！");
+    } catch (error) {
+      console.error("Failed to delete profile:", error);
+      alert("删除失败: " + error);
     }
   };
 
@@ -1001,83 +1213,97 @@ function App() {
                 </div>
 
                 {installedTools.length > 0 ? (
-                  <div className="grid gap-4">
+                  <Tabs value={selectedSwitchTab} onValueChange={setSelectedSwitchTab}>
+                    <TabsList className="grid w-full grid-cols-3 mb-6">
+                      {installedTools.map(tool => (
+                        <TabsTrigger key={tool.id} value={tool.id} className="gap-2">
+                          <img src={logoMap[tool.id]} alt={tool.name} className="w-4 h-4" />
+                          {tool.name}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+
                     {installedTools.map(tool => {
                       const toolProfiles = profiles[tool.id] || [];
                       const activeConfig = activeConfigs[tool.id];
                       return (
-                        <Card key={tool.id} className="shadow-sm border">
-                          <CardHeader>
-                            <div className="flex items-center gap-3">
-                              <img src={logoMap[tool.id]} alt={tool.name} className="w-10 h-10" />
-                              <div className="flex-1">
-                                <CardTitle className="text-lg">{tool.name}</CardTitle>
-                                <CardDescription>{descriptionMap[tool.id]}</CardDescription>
-                              </div>
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            {/* 显示当前生效的配置 */}
-                            {activeConfig && (
-                              <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950 dark:to-cyan-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                                <div className="flex items-center gap-2 mb-3">
-                                  <Key className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                  <h4 className="font-semibold text-blue-900 dark:text-blue-100">当前生效配置</h4>
-                                </div>
-                                <div className="space-y-2 text-sm">
-                                  <div className="flex items-start gap-2">
-                                    <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">API Key:</span>
-                                    <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
-                                      {maskApiKey(activeConfig.api_key)}
-                                    </span>
+                        <TabsContent key={tool.id} value={tool.id}>
+                          <Card className="shadow-sm border">
+                            <CardContent className="pt-6">
+                              {/* 显示当前生效的配置 */}
+                              {activeConfig && (
+                                <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950 dark:to-cyan-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <Key className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                    <h4 className="font-semibold text-blue-900 dark:text-blue-100">当前生效配置</h4>
                                   </div>
-                                  <div className="flex items-start gap-2">
-                                    <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">Base URL:</span>
-                                    <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded break-all">
-                                      {activeConfig.base_url}
-                                    </span>
+                                  <div className="space-y-2 text-sm">
+                                    {activeConfig.profile_name && (
+                                      <div className="flex items-start gap-2">
+                                        <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">配置名称:</span>
+                                        <span className="font-semibold text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
+                                          {activeConfig.profile_name}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">API Key:</span>
+                                      <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
+                                        {maskApiKey(activeConfig.api_key)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">Base URL:</span>
+                                      <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded break-all">
+                                        {activeConfig.base_url}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            {toolProfiles.length > 0 ? (
-                              <div className="space-y-3">
-                                <Label>选择配置文件:</Label>
-                                <Select
-                                  value={selectedProfile[tool.id] || ""}
-                                  onValueChange={(value) => handleSwitchProfile(tool.id, value)}
-                                  disabled={switching}
-                                >
-                                  <SelectTrigger className="shadow-sm">
-                                    <SelectValue placeholder="选择要切换的配置" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {toolProfiles.map(profile => (
-                                      <SelectItem key={profile} value={profile}>
-                                        {profile}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                {switching && (
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    正在切换配置...
+                              {toolProfiles.length > 0 ? (
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Label>可用的配置文件</Label>
+                                    <span className="text-xs text-muted-foreground">(拖拽排序)</span>
                                   </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                <p className="text-muted-foreground mb-3">暂无保存的配置文件</p>
-                                <p className="text-sm text-muted-foreground">在"配置 API"页面保存配置时填写名称即可创建多个配置</p>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
+                                  <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCenter}
+                                    onDragEnd={handleDragEnd(tool.id)}
+                                  >
+                                    <SortableContext
+                                      items={toolProfiles}
+                                      strategy={verticalListSortingStrategy}
+                                    >
+                                      <div className="space-y-2">
+                                        {toolProfiles.map(profile => (
+                                          <SortableProfileItem
+                                            key={profile}
+                                            profile={profile}
+                                            toolId={tool.id}
+                                            switching={switching}
+                                            onSwitch={handleSwitchProfile}
+                                            onDelete={handleDeleteProfile}
+                                          />
+                                        ))}
+                                      </div>
+                                    </SortableContext>
+                                  </DndContext>
+                                </div>
+                              ) : (
+                                <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                  <p className="text-muted-foreground mb-3">暂无保存的配置文件</p>
+                                  <p className="text-sm text-muted-foreground">在"配置 API"页面保存配置时填写名称即可创建多个配置</p>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        </TabsContent>
                       );
                     })}
-                  </div>
+                  </Tabs>
                 ) : (
                   <Card className="shadow-sm border">
                     <CardContent className="py-16 text-center">
