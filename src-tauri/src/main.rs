@@ -1545,10 +1545,11 @@ async fn start_transparent_proxy(
 
     let proxy_port = config.transparent_proxy_port;
 
-    // 如果是第一次启动，需要保存当前配置并修改 ClaudeCode 配置
-    if config.transparent_proxy_real_api_key.is_none() {
-        let tool = Tool::claude_code();
+    let tool = Tool::claude_code();
 
+    // 每次启动都检查并确保配置正确设置
+    // 如果还没有备份过真实配置，先备份
+    if config.transparent_proxy_real_api_key.is_none() {
         // 启用透明代理（保存真实配置并修改 ClaudeCode 配置）
         TransparentProxyConfigService::enable_transparent_proxy(
             &tool,
@@ -1562,6 +1563,14 @@ async fn start_transparent_proxy(
         save_global_config(config.clone())
             .await
             .map_err(|e| format!("保存配置失败: {}", e))?;
+    } else {
+        // 已经备份过配置，只需确保当前配置指向本地代理
+        TransparentProxyConfigService::update_config_to_proxy(
+            &tool,
+            proxy_port,
+            &local_api_key,
+        )
+        .map_err(|e| format!("更新代理配置失败: {}", e))?;
     }
 
     // 从全局配置获取真实的 API 配置

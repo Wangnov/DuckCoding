@@ -153,6 +153,55 @@ impl TransparentProxyConfigService {
         Ok(())
     }
 
+    /// 更新 ClaudeCode 配置指向本地代理（不备份真实配置）
+    pub fn update_config_to_proxy(
+        tool: &Tool,
+        local_proxy_port: u16,
+        local_proxy_key: &str,
+    ) -> Result<()> {
+        if tool.id != "claude-code" {
+            anyhow::bail!("透明代理目前仅支持 ClaudeCode");
+        }
+
+        let config_path = tool.config_dir.join(&tool.config_file);
+
+        // 读取当前 ClaudeCode 配置
+        let mut settings = if config_path.exists() {
+            let content = fs::read_to_string(&config_path).context("读取配置文件失败")?;
+            serde_json::from_str::<Value>(&content).unwrap_or(Value::Object(Map::new()))
+        } else {
+            anyhow::bail!("ClaudeCode 配置文件不存在");
+        };
+
+        if !settings.is_object() {
+            anyhow::bail!("配置文件格式错误");
+        }
+
+        let obj = settings.as_object_mut().unwrap();
+        if !obj.contains_key("env") {
+            obj.insert("env".to_string(), Value::Object(Map::new()));
+        }
+
+        // 修改 ClaudeCode 配置指向本地代理
+        let env = obj.get_mut("env").unwrap().as_object_mut().unwrap();
+        env.insert(
+            "ANTHROPIC_AUTH_TOKEN".to_string(),
+            Value::String(local_proxy_key.to_string()),
+        );
+        env.insert(
+            "ANTHROPIC_BASE_URL".to_string(),
+            Value::String(format!("http://127.0.0.1:{}", local_proxy_port)),
+        );
+
+        // 写入配置
+        let json = serde_json::to_string_pretty(&settings)?;
+        fs::write(&config_path, json)?;
+
+        println!("✅ ClaudeCode 配置已更新指向本地代理");
+
+        Ok(())
+    }
+
     /// 获取真实的 API 配置（用于代理服务）
     pub fn get_real_config(global_config: &GlobalConfig) -> Result<(String, String)> {
         let api_key = global_config

@@ -10,8 +10,6 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri:backend-watch": "cd src-tauri && cargo watch -x run",
-    "dev:fast": "concurrently \"npm:dev\" \"npm:tauri:backend-watch\"",
     "lint": "npm run lint:ts && npm run lint:rs",
     "lint:fix": "npm run lint:ts:fix && npm run lint:rs:fix",
     "lint:ts": "eslint .",
@@ -63,6 +61,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tauri-apps/cli": "^2.9.3",
+    "@types/node": "^20.19.25",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",

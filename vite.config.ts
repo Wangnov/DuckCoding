@@ -13,7 +13,7 @@ export default defineConfig(async () => ({
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 5173,
-    strictPort: true,
+    strictPort: false, // 允许端口被占用时自动寻找其他端口
     watch: {
       // 3. tell vite to ignore watching `src-tauri`
       ignored: ['**/src-tauri/**'],
