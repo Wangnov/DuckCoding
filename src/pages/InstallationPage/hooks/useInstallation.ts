@@ -6,7 +6,7 @@ import {
 } from '@/lib/tauri-commands';
 import type { NodeEnvironment } from '@/components/dialogs/MirrorStaleDialog';
 
-export function useInstallation(tools: ToolStatus[]) {
+export function useInstallation(_tools: ToolStatus[]) {
   const [installing, setInstalling] = useState<string | null>(null);
   const [nodeEnv, setNodeEnv] = useState<NodeEnvironment | null>(null);
   const [installMethods, setInstallMethods] = useState<Record<string, string>>({
@@ -119,7 +119,7 @@ export function useInstallation(tools: ToolStatus[]) {
   const handleContinueMirror = useCallback(
     async (
       toolId: string,
-      source: 'install' | 'update',
+      _source: 'install' | 'update',
       mirrorVersion: string,
     ): Promise<{ success: boolean; message: string }> => {
       setMirrorStaleDialog({

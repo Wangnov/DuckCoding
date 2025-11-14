@@ -209,10 +209,11 @@ export function ConfigurationPage({ tools: toolsProp, loading: loadingProp }: Co
       <ConfigOverrideDialog
         open={configOverrideDialog.open}
         targetProfile={configOverrideDialog.targetProfile}
+        configuring={configuring}
         onClose={() =>
           setConfigOverrideDialog({ open: false, targetProfile: '', willOverride: false })
         }
-        onConfirm={performConfigSave}
+        onConfirmOverride={performConfigSave}
       />
     </PageContainer>
   );

@@ -1,9 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import {
-  updateTool as updateToolCommand,
-  checkAllUpdates,
-  type ToolStatus,
-} from '@/lib/tauri-commands';
+import { useCallback, useRef, useState } from 'react';
+import { checkAllUpdates, type ToolStatus, updateTool as updateToolCommand, } from '@/lib/tauri-commands';
 
 export function useDashboard(initialTools: ToolStatus[]) {
   const [tools, setTools] = useState<ToolStatus[]>(initialTools);
@@ -35,8 +31,8 @@ export function useDashboard(initialTools: ToolStatus[]) {
           return {
             ...tool,
             hasUpdate: updateInfo.has_update,
-            latestVersion: updateInfo.latest_version || undefined,
-            mirrorVersion: updateInfo.mirror_version || undefined,
+            latestVersion: updateInfo.latest_version || null,
+            mirrorVersion: updateInfo.mirror_version || null,
             mirrorIsStale: updateInfo.mirror_is_stale || false,
           };
         }
@@ -111,7 +107,7 @@ export function useDashboard(initialTools: ToolStatus[]) {
   // 但如果版本号变化，说明已更新，使用新数据
   const updateTools = useCallback((newTools: ToolStatus[]) => {
     setTools((prevTools) => {
-      const mergedTools = newTools.map((newTool) => {
+      return newTools.map((newTool) => {
         const existingTool = prevTools.find((t) => t.id === newTool.id);
 
         if (existingTool) {
@@ -119,7 +115,7 @@ export function useDashboard(initialTools: ToolStatus[]) {
           if (existingTool.version === newTool.version) {
             return {
               ...newTool,
-              // 保留检查更新后设置的字段
+              // 保留检查更新后设置的字段，确保类型匹配
               hasUpdate: existingTool.hasUpdate,
               latestVersion: existingTool.latestVersion,
               mirrorVersion: existingTool.mirrorVersion,
@@ -127,15 +123,19 @@ export function useDashboard(initialTools: ToolStatus[]) {
             };
           }
 
-          // 版本号不同：工具已更新，使用新数据（清除更新状态）
-          return newTool;
+          // 版本号不同：工具已更新，明确清除更新状态
+          return {
+            ...newTool,
+            hasUpdate: false,
+            latestVersion: null,
+            mirrorVersion: null,
+            mirrorIsStale: false,
+          };
         }
 
         // 新工具直接使用
         return newTool;
       });
-
-      return mergedTools;
     });
   }, []); // 空依赖数组，因为使用了函数式更新
 

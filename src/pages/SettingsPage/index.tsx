@@ -19,7 +19,6 @@ interface SettingsPageProps {
 
 export function SettingsPage({
   globalConfig,
-  configLoading,
   onConfigChange,
 }: SettingsPageProps) {
   const { toast } = useToast();

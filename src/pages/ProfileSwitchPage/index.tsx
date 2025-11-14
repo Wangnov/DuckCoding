@@ -58,11 +58,6 @@ export function ProfileSwitchPage({ tools: toolsProp, loading: loadingProp }: Pr
     setLoading(loadingProp);
   }, [toolsProp, loadingProp]);
 
-  // 通知父组件刷新工具列表
-  const refreshTools = () => {
-    window.dispatchEvent(new CustomEvent('refresh-tools'));
-  };
-
   // 初始加载
   useEffect(() => {
     loadGlobalConfig();
