@@ -12,6 +12,8 @@ pub struct Tool {
     pub config_dir: PathBuf,
     pub config_file: String,
     pub env_vars: EnvVars,
+    /// 版本检查是否使用代理（某些工具如Claude Code在代理环境下会出错）
+    pub use_proxy_for_version_check: bool,
 }
 
 /// 环境变量配置
@@ -56,6 +58,7 @@ impl Tool {
                 api_key: "ANTHROPIC_AUTH_TOKEN".to_string(),
                 base_url: "ANTHROPIC_BASE_URL".to_string(),
             },
+            use_proxy_for_version_check: false, // Claude Code在代理环境下会出现URL协议错误
         }
     }
 
@@ -75,6 +78,7 @@ impl Tool {
                 api_key: "OPENAI_API_KEY".to_string(),
                 base_url: "base_url".to_string(), // TOML key
             },
+            use_proxy_for_version_check: true, // CodeX可以使用代理
         }
     }
 
@@ -94,6 +98,7 @@ impl Tool {
                 api_key: "GEMINI_API_KEY".to_string(),
                 base_url: "GOOGLE_GEMINI_BASE_URL".to_string(),
             },
+            use_proxy_for_version_check: true, // Gemini CLI可以使用代理
         }
     }
 

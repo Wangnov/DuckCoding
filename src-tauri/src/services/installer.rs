@@ -1,7 +1,11 @@
 use crate::models::{InstallMethod, Tool};
 use crate::services::version::{VersionInfo, VersionService};
-use crate::utils::CommandExecutor;
+use crate::utils::{CommandExecutor, platform::PlatformInfo};
 use anyhow::{Context, Result};
+use std::process::Command;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 /// 安装服务
 pub struct InstallerService {
@@ -41,7 +45,12 @@ impl InstallerService {
 
     /// 获取已安装版本
     pub async fn get_installed_version(&self, tool: &Tool) -> Option<String> {
-        let result = self.executor.execute_async(&tool.check_command).await;
+        // 根据工具配置决定是否使用代理
+        let result = if tool.use_proxy_for_version_check {
+            self.executor.execute_async(&tool.check_command).await
+        } else {
+            self.execute_without_proxy(&tool.check_command).await
+        };
 
         if result.success {
             Self::extract_version(&result.stdout)
@@ -55,6 +64,70 @@ impl InstallerService {
         // 匹配版本号格式: v1.2.3 或 1.2.3
         let re = regex::Regex::new(r"v?(\d+\.\d+\.\d+(?:-[\w.]+)?)").ok()?;
         re.captures(output)?.get(1).map(|m| m.as_str().to_string())
+    }
+
+    /// 执行命令但不使用代理（用于版本检查）
+    async fn execute_without_proxy(&self, command_str: &str) -> crate::utils::CommandResult {
+        let command_str = command_str.to_string();
+        let platform = PlatformInfo::current();
+
+        tokio::task::spawn_blocking(move || {
+            let enhanced_path = platform.build_enhanced_path();
+
+            // 创建不继承代理环境的命令
+            let output = if platform.is_windows {
+                #[cfg(target_os = "windows")]
+                {
+                    Command::new("cmd")
+                        .args(["/C", &command_str])
+                        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                        .env("PATH", enhanced_path)
+                        .env_remove("HTTP_PROXY")
+                        .env_remove("HTTPS_PROXY")
+                        .env_remove("ALL_PROXY")
+                        .env_remove("http_proxy")
+                        .env_remove("https_proxy")
+                        .env_remove("all_proxy")
+                        .output()
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    Command::new("cmd")
+                        .args(["/C", &command_str])
+                        .env("PATH", enhanced_path)
+                        .env_remove("HTTP_PROXY")
+                        .env_remove("HTTPS_PROXY")
+                        .env_remove("ALL_PROXY")
+                        .env_remove("http_proxy")
+                        .env_remove("https_proxy")
+                        .env_remove("all_proxy")
+                        .output()
+                }
+            } else {
+                Command::new("sh")
+                    .args(["-c", &command_str])
+                    .env("PATH", enhanced_path)
+                    .env_remove("HTTP_PROXY")
+                    .env_remove("HTTPS_PROXY")
+                    .env_remove("ALL_PROXY")
+                    .env_remove("http_proxy")
+                    .env_remove("https_proxy")
+                    .env_remove("all_proxy")
+                    .output()
+            };
+
+            match output {
+                Ok(output) => crate::utils::CommandResult::from_output(output),
+                Err(e) => crate::utils::CommandResult::from_error(e),
+            }
+        })
+        .await
+        .unwrap_or_else(|e| crate::utils::CommandResult {
+            success: false,
+            stdout: String::new(),
+            stderr: format!("任务执行失败: {}", e),
+            exit_code: None,
+        })
     }
 
     /// 检测工具的安装方法
