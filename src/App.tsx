@@ -50,6 +50,7 @@ import {
   GripVertical,
   Trash2,
   Power,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   checkInstallations,
@@ -114,6 +115,12 @@ import DuckLogo from '@/assets/duck-logo.png';
 import { QuotaCard } from '@/components/QuotaCard';
 import { UsageChart } from '@/components/UsageChart';
 import { TodayStatsCard } from '@/components/TodayStatsCard';
+import { SecretInput } from '@/components/SecretInput';
+import {
+  ClaudeConfigManager,
+  CodexConfigManager,
+  GeminiConfigManager,
+} from '@/components/ToolConfigManager';
 
 interface ToolWithUpdate extends ToolStatus {
   hasUpdate?: boolean;
@@ -294,6 +301,9 @@ function App() {
     useState<TransparentProxyStatus | null>(null);
   const [startingProxy, setStartingProxy] = useState(false);
   const [stoppingProxy, setStoppingProxy] = useState(false);
+  const [claudeConfigRefresh, setClaudeConfigRefresh] = useState(0);
+  const [codexConfigRefresh, setCodexConfigRefresh] = useState(0);
+  const [geminiConfigRefresh, setGeminiConfigRefresh] = useState(0);
 
   // 统计数据状态
   const [usageStats, setUsageStats] = useState<UsageStatsResult | null>(null);
@@ -1330,6 +1340,13 @@ function App() {
       try {
         const activeConfig = await getActiveConfig(toolId);
         setActiveConfigs({ ...activeConfigs, [toolId]: activeConfig });
+        if (toolId === 'claude-code') {
+          setClaudeConfigRefresh((token) => token + 1);
+        } else if (toolId === 'codex') {
+          setCodexConfigRefresh((token) => token + 1);
+        } else if (toolId === 'gemini-cli') {
+          setGeminiConfigRefresh((token) => token + 1);
+        }
       } catch (error) {
         console.error('Failed to reload active config', error);
       }
@@ -2071,13 +2088,13 @@ function App() {
                           <div className="space-y-2">
                             <Label htmlFor="api-key">API Key *</Label>
                             <div className="flex gap-2">
-                              <Input
+                              <SecretInput
                                 id="api-key"
-                                type="password"
                                 placeholder="输入 API Key"
                                 value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                                className="shadow-sm flex-1"
+                                onValueChange={setApiKey}
+                                className="shadow-sm"
+                                wrapperClassName="flex-1"
                               />
                               <Button
                                 onClick={handleGenerateApiKey}
@@ -2352,182 +2369,206 @@ function App() {
                 )}
 
                 {installedTools.length > 0 ? (
-                  <Tabs value={selectedSwitchTab} onValueChange={setSelectedSwitchTab}>
-                    <TabsList className="grid w-full grid-cols-3 mb-6">
-                      {installedTools.map((tool) => (
-                        <TabsTrigger key={tool.id} value={tool.id} className="gap-2">
-                          <img src={logoMap[tool.id]} alt={tool.name} className="w-4 h-4" />
-                          {tool.name}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
+                  <>
+                    <Tabs value={selectedSwitchTab} onValueChange={setSelectedSwitchTab}>
+                      <TabsList className="grid w-full grid-cols-3 mb-6">
+                        {installedTools.map((tool) => (
+                          <TabsTrigger key={tool.id} value={tool.id} className="gap-2">
+                            <img src={logoMap[tool.id]} alt={tool.name} className="w-4 h-4" />
+                            {tool.name}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
 
-                    {installedTools.map((tool) => {
-                      const toolProfiles = profiles[tool.id] || [];
-                      const activeConfig = activeConfigs[tool.id];
-                      return (
-                        <TabsContent key={tool.id} value={tool.id}>
-                          <Card className="shadow-sm border">
-                            <CardContent className="pt-6">
-                              {/* 显示当前生效的配置 */}
-                              {activeConfig && (
-                                <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950 dark:to-cyan-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <Key className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                    <h4 className="font-semibold text-blue-900 dark:text-blue-100">
-                                      {/* 透明代理开启时且是ClaudeCode时显示特殊名称 */}
-                                      {tool.id === 'claude-code' && effectiveTransparentEnabled
-                                        ? '透明代理配置'
-                                        : '当前生效配置'}
-                                    </h4>
-                                  </div>
-                                  <div className="space-y-2 text-sm">
-                                    {/* 透明代理开启时且是ClaudeCode时显示真实API配置 */}
-                                    {tool.id === 'claude-code' && effectiveTransparentEnabled ? (
-                                      <>
-                                        {/* 检查是否缺少透明代理配置 */}
-                                        {!globalConfig?.transparent_proxy_real_api_key ||
-                                        !globalConfig?.transparent_proxy_real_base_url ? (
-                                          <div className="mb-4 p-3 bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950 dark:to-orange-950 rounded-lg border border-red-200 dark:border-red-800">
-                                            <div className="flex items-start gap-2">
-                                              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                                              <div className="space-y-1">
-                                                <h5 className="font-semibold text-red-900 dark:text-red-100">
-                                                  ⚠️ 透明代理配置缺失
-                                                </h5>
-                                                <p className="text-sm text-red-800 dark:text-red-200">
-                                                  检测到透明代理功能已开启，但缺少真实的API配置。请先选择一个有效的配置文件，然后再启动透明代理。
-                                                </p>
-                                                <p className="text-xs text-red-700 dark:text-red-300 mt-2">
-                                                  可能导致请求回环或连接问题
-                                                </p>
+                      {installedTools.map((tool) => {
+                        const toolProfiles = profiles[tool.id] || [];
+                        const activeConfig = activeConfigs[tool.id];
+                        return (
+                          <TabsContent key={tool.id} value={tool.id}>
+                            <Card className="shadow-sm border">
+                              <CardContent className="pt-6">
+                                {/* 显示当前生效的配置 */}
+                                {activeConfig && (
+                                  <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950 dark:to-cyan-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <Key className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                      <h4 className="font-semibold text-blue-900 dark:text-blue-100">
+                                        {/* 透明代理开启时且是ClaudeCode时显示特殊名称 */}
+                                        {tool.id === 'claude-code' && effectiveTransparentEnabled
+                                          ? '透明代理配置'
+                                          : '当前生效配置'}
+                                      </h4>
+                                    </div>
+                                    <div className="space-y-2 text-sm">
+                                      {/* 透明代理开启时且是ClaudeCode时显示真实API配置 */}
+                                      {tool.id === 'claude-code' && effectiveTransparentEnabled ? (
+                                        <>
+                                          {/* 检查是否缺少透明代理配置 */}
+                                          {!globalConfig?.transparent_proxy_real_api_key ||
+                                          !globalConfig?.transparent_proxy_real_base_url ? (
+                                            <div className="mb-4 p-3 bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950 dark:to-orange-950 rounded-lg border border-red-200 dark:border-red-800">
+                                              <div className="flex items-start gap-2">
+                                                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                                                <div className="space-y-1">
+                                                  <h5 className="font-semibold text-red-900 dark:text-red-100">
+                                                    ⚠️ 透明代理配置缺失
+                                                  </h5>
+                                                  <p className="text-sm text-red-800 dark:text-red-200">
+                                                    检测到透明代理功能已开启，但缺少真实的API配置。请先选择一个有效的配置文件，然后再启动透明代理。
+                                                  </p>
+                                                  <p className="text-xs text-red-700 dark:text-red-300 mt-2">
+                                                    可能导致请求回环或连接问题
+                                                  </p>
+                                                </div>
                                               </div>
                                             </div>
-                                          </div>
-                                        ) : null}
+                                          ) : null}
 
-                                        <div className="flex items-start gap-2">
-                                          <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
-                                            配置名称:
-                                          </span>
-                                          <span className="font-semibold text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
-                                            透明代理配置
-                                          </span>
-                                        </div>
-                                        <div className="flex items-start gap-2">
-                                          <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
-                                            API Key:
-                                          </span>
-                                          <span
-                                            className={`font-mono px-2 py-0.5 rounded ${
-                                              globalConfig?.transparent_proxy_real_api_key
-                                                ? 'text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50'
-                                                : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950'
-                                            }`}
-                                          >
-                                            {globalConfig?.transparent_proxy_real_api_key
-                                              ? maskApiKey(
-                                                  globalConfig.transparent_proxy_real_api_key,
-                                                )
-                                              : '⚠️ 未配置'}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-start gap-2">
-                                          <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
-                                            Base URL:
-                                          </span>
-                                          <span
-                                            className={`font-mono px-2 py-0.5 rounded break-all ${
-                                              globalConfig?.transparent_proxy_real_base_url
-                                                ? 'text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50'
-                                                : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950'
-                                            }`}
-                                          >
-                                            {globalConfig?.transparent_proxy_real_base_url ||
-                                              '⚠️ 未配置'}
-                                          </span>
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <>
-                                        {activeConfig.profile_name && (
                                           <div className="flex items-start gap-2">
                                             <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
                                               配置名称:
                                             </span>
                                             <span className="font-semibold text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
-                                              {activeConfig.profile_name}
+                                              透明代理配置
                                             </span>
                                           </div>
-                                        )}
-                                        <div className="flex items-start gap-2">
-                                          <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
-                                            API Key:
-                                          </span>
-                                          <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
-                                            {maskApiKey(activeConfig.api_key)}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-start gap-2">
-                                          <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
-                                            Base URL:
-                                          </span>
-                                          <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded break-all">
-                                            {activeConfig.base_url}
-                                          </span>
-                                        </div>
-                                      </>
-                                    )}
+                                          <div className="flex items-start gap-2">
+                                            <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
+                                              API Key:
+                                            </span>
+                                            <span
+                                              className={`font-mono px-2 py-0.5 rounded ${
+                                                globalConfig?.transparent_proxy_real_api_key
+                                                  ? 'text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50'
+                                                  : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950'
+                                              }`}
+                                            >
+                                              {globalConfig?.transparent_proxy_real_api_key
+                                                ? maskApiKey(
+                                                    globalConfig.transparent_proxy_real_api_key,
+                                                  )
+                                                : '⚠️ 未配置'}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-start gap-2">
+                                            <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
+                                              Base URL:
+                                            </span>
+                                            <span
+                                              className={`font-mono px-2 py-0.5 rounded break-all ${
+                                                globalConfig?.transparent_proxy_real_base_url
+                                                  ? 'text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50'
+                                                  : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950'
+                                              }`}
+                                            >
+                                              {globalConfig?.transparent_proxy_real_base_url ||
+                                                '⚠️ 未配置'}
+                                            </span>
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <>
+                                          {activeConfig.profile_name && (
+                                            <div className="flex items-start gap-2">
+                                              <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
+                                                配置名称:
+                                              </span>
+                                              <span className="font-semibold text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
+                                                {activeConfig.profile_name}
+                                              </span>
+                                            </div>
+                                          )}
+                                          <div className="flex items-start gap-2">
+                                            <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
+                                              API Key:
+                                            </span>
+                                            <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded">
+                                              {maskApiKey(activeConfig.api_key)}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-start gap-2">
+                                            <span className="text-blue-700 dark:text-blue-300 font-medium min-w-20">
+                                              Base URL:
+                                            </span>
+                                            <span className="font-mono text-blue-900 dark:text-blue-100 bg-white/50 dark:bg-slate-900/50 px-2 py-0.5 rounded break-all">
+                                              {activeConfig.base_url}
+                                            </span>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
 
-                              {toolProfiles.length > 0 ? (
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Label>可用的配置文件（拖拽可调整顺序）</Label>
-                                  </div>
-                                  <DndContext
-                                    sensors={sensors}
-                                    collisionDetection={closestCenter}
-                                    onDragEnd={handleDragEnd(tool.id)}
-                                  >
-                                    <SortableContext
-                                      items={toolProfiles}
-                                      strategy={verticalListSortingStrategy}
+                                {toolProfiles.length > 0 ? (
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Label>可用的配置文件（拖拽可调整顺序）</Label>
+                                    </div>
+                                    <DndContext
+                                      sensors={sensors}
+                                      collisionDetection={closestCenter}
+                                      onDragEnd={handleDragEnd(tool.id)}
                                     >
-                                      <div className="space-y-2">
-                                        {toolProfiles.map((profile) => (
-                                          <SortableProfileItem
-                                            key={profile}
-                                            profile={profile}
-                                            toolId={tool.id}
-                                            switching={switching}
-                                            deleting={
-                                              deletingProfiles[`${tool.id}-${profile}`] || false
-                                            }
-                                            onSwitch={handleSwitchProfile}
-                                            onDelete={handleDeleteProfile}
-                                          />
-                                        ))}
-                                      </div>
-                                    </SortableContext>
-                                  </DndContext>
-                                </div>
-                              ) : (
-                                <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                  <p className="text-muted-foreground mb-3">暂无保存的配置文件</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    在"配置 API"页面保存配置时填写名称即可创建多个配置
-                                  </p>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        </TabsContent>
-                      );
-                    })}
-                  </Tabs>
+                                      <SortableContext
+                                        items={toolProfiles}
+                                        strategy={verticalListSortingStrategy}
+                                      >
+                                        <div className="space-y-2">
+                                          {toolProfiles.map((profile) => (
+                                            <SortableProfileItem
+                                              key={profile}
+                                              profile={profile}
+                                              toolId={tool.id}
+                                              switching={switching}
+                                              deleting={
+                                                deletingProfiles[`${tool.id}-${profile}`] || false
+                                              }
+                                              onSwitch={handleSwitchProfile}
+                                              onDelete={handleDeleteProfile}
+                                            />
+                                          ))}
+                                        </div>
+                                      </SortableContext>
+                                    </DndContext>
+                                  </div>
+                                ) : (
+                                  <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                    <p className="text-muted-foreground mb-3">暂无保存的配置文件</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      在"配置 API"页面保存配置时填写名称即可创建多个配置
+                                    </p>
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          </TabsContent>
+                        );
+                      })}
+                    </Tabs>
+                    {selectedSwitchTab && (
+                      <div className="mt-10 space-y-4">
+                        <div className="flex items-center gap-3">
+                          <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <h3 className="text-lg font-semibold">高级配置管理</h3>
+                            <p className="text-sm text-muted-foreground">
+                              直接读取并编辑 {getToolDisplayName(selectedSwitchTab)} 配置文件
+                            </p>
+                          </div>
+                        </div>
+                        {selectedSwitchTab === 'claude-code' && (
+                          <ClaudeConfigManager refreshSignal={claudeConfigRefresh} />
+                        )}
+                        {selectedSwitchTab === 'codex' && (
+                          <CodexConfigManager refreshSignal={codexConfigRefresh} />
+                        )}
+                        {selectedSwitchTab === 'gemini-cli' && (
+                          <GeminiConfigManager refreshSignal={geminiConfigRefresh} />
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <Card className="shadow-sm border">
                     <CardContent className="py-16 text-center">
