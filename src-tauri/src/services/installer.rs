@@ -1,6 +1,6 @@
 use crate::models::{InstallMethod, Tool};
 use crate::services::version::{VersionInfo, VersionService};
-use crate::utils::{CommandExecutor, platform::PlatformInfo};
+use crate::utils::{platform::PlatformInfo, CommandExecutor};
 use anyhow::{Context, Result};
 use std::process::Command;
 
